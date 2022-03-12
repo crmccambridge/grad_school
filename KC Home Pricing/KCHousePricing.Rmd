@@ -1,0 +1,1092 @@
+---
+title: "Kansas City House Pricing"
+author: "Connor McCambridge"
+output:
+  html_document:
+    theme: paper
+    highlight: tango
+    toc: TRUE
+    toc_float: TRUE
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Project Details
+
+In the past few years, it seems like the housing market in Kansas City has really taken off, so I thought it would be great to take a look at the time series of average home selling price of the past ten years and use it to try to forecast where home prices will be going moving forward. And besides looking solely at average home selling price I wanted to bring in some other time series variables as well to help aid the forecasting and get a better insight of what effects home selling prices. I decided for all my forecast for this time series will go out 36 months, or 3 years, to help to see the full effect of where the forecast is going out to.
+
+#Preparation
+
+Before the I start the analysis I need to get the R environment ready by loading the packages, functions, and data I will need.
+
+##Loading Packages
+
+First I load the packages I will be using throughout the project, also I set how numbers will be displayed throughout the project, there was a tendency through the project for the output to turned into the scientific form, so for consistency I wanted to make sure that all the numbers were outputted in a similar format.
+
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+require(fma)
+require(ggplot2)
+require(ggthemes)
+require(magrittr)
+require(zoo)
+require(fBasics)
+require(fpp)
+require(forecast)
+require(knitr)
+require(lmtest)
+require(corrplot)
+require(mvtsplot)
+options("scipen"=1, "digits"=4)
+```
+
+##Loading Function
+
+The next thing was to load a custom function that I have used in many different assignments through the year. It allows for plots to be plotted together very easily which is extremely useful when comparing multiple charts, it is the best when the plots can be placed right next to each other for reference.
+
+```{r, warning=FALSE,message=FALSE,error=FALSE}
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+##Loading Data
+
+And lastly, before I can start the analysis I need to load the dataset that I will be performing the analysis on. The dataset I am using is a custom dataset that has information for the past 10 years, broken down by month, on the average home selling price in Kansas City, which is the main variable that I will be looking at throughout the project, but I also have the number of home listing in Kansas City, the number of new housing permits in Kansas City, and the Housing Price Index for the United States. After I load the dataset I immediately turn the first variable of the average home selling price in Kansas City into a time series so that I can begin analysis.
+
+```{r}
+kchouse <- read.csv("kc_housing.csv")
+kcts <- ts(kchouse$avg_price, start=c(2007,8),frequency=12)
+#kcts
+```
+
+#Single Variable Time Series
+
+The analysis we will begin with the single variable time series, for which the time series data has already been created.
+
+##Plots of Time Series
+
+The first analysis that will be done on the time series is the average selling place of homes in Kansas City will be a visual analysis.
+
+###Time Series Plot
+
+A simple time series plot will help to aid in understanding the dataset.
+
+```{r, out.width = '100%'}
+kcts %>% autoplot()+
+  theme_minimal() + 
+  geom_line(aes(colour="price"))+
+  scale_colour_calc() +
+  labs(title = "Average Kansas City Home Selling Price",subtitle="From 10/10/2006 to 10/9/2017",x = "Date", y = "Price")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+
+```
+
+A lot can be learned from this first plot. The first thing that is noticed is that there is clear seasonality to the time series, which appears to be a yearly season. Also there is an in a positive trend to the dataset, but there was a definite downturn of the data between the start of the data in August of 2007 where it bottomed out in January of 2009, which matches the timeframe of the last financial crisis, but what it is very interesting is that is seems like the downturn in the housing market happened before the downturn in the stock market.
+
+But a few years after the crisis home prices stayed fairly stable. After the drop in 2008 for the next 3 years, home prices stayed relatively flat before starting it 7 plus year rise in average home prices. 
+
+Also in looking at the chart, it seems like the dataset is not stationary, or in other words that the data is not normalized. A simple way to tell this is that the mean of a normalized data is zero, which this dataset clearly is not. There are other visual and statistical tests that can be run to confirm this.
+
+###Decomposition Plots
+
+The next visual analysis will be a decomposition analysis.
+
+```{r, out.width = '100%'}
+autoplot(stl(kcts, s.window="periodic", robust=TRUE))+
+  theme_minimal()+
+  labs(title = "Decomposition of Average Kansas City Home Selling Price")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+
+#decompose(kcts)%>%autoplot()+theme_minimal()+scale_colour_calc()
+```
+
+The decomposition plot shows the trend, the yearly seasonal effect, and the error of the time series. It shows that there is indeed a yearly seasonality in the dataset. But it also shows that the trend of the data is not what it originally appeared. In the first plot it seemed like the home prices stabilized after 2008, but when the seasonality has been removed it is clear to see that prices did not stabilize, it actually continued to drop until the first half of 2011. What this plot shows is that there is also remainder in the dataset that is not explained by just the trend and seasonality of the dataset alone.
+
+These remainders are going to be a bit of an issue when trying to predict the future forecast based on the single time series alone, but hopefully, when the other variables are brought in later they will help to explain these remainders in the data.
+
+###ACF and PACF Plots
+
+For the next visual analysis the ACF and PACF of the dataset.
+
+```{r,out.width = '100%', fig.height = 7, warning=FALSE,message=FALSE,error=FALSE}
+p1<-ggAcf(kcts) + theme_minimal()+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+ ggtitle('ACF and PACF of Average Kansas Ctiy Home Selling Price')
+
+p2<-ggPacf(kcts) + theme_minimal()+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+ ggtitle('')
+
+multiplot(p1,p2, cols =1)
+```
+
+The ACF plots confirm that the data is highly correlated with itself, showing at least autocorrelation for 24 lag. And with the gentle slope of the ACF plot is tell us that the data is non-stationary, meaning that the dataset is not normally distributed. And the spikes of correlations at the 12 and 24 lag marks helps to confirm our yearly seasonality effect. This plot helps to show the data is not just white noise, but that can not be told when the data is not normalized.
+
+The PACF plot shows that once the lag effect of the dataset have been removed that there is still autocorrelation in the dataset, meaning that the data has partial autocorrelation. The spikes at the 1 lag and 13 also show there is yearly seasonality as well.
+
+###Histogram
+
+Now for analysis, we look at the histogram and density plot of the dataset.
+
+```{r,out.width = '100%'}
+ggplot(kcts, aes(x=y)) +
+  geom_histogram(aes(y=..density..),binwidth=5000,  fill = "goldenrod")+
+  geom_density(aes(y=..density.., colour ="Navy")) +  
+  geom_vline(aes(xintercept=mean(y, na.rm=TRUE)),color="grey69", linetype="dashed", size=1)+
+  labs(title = "Histogram of Average Kansas City Home Selling Price", x = "Price", y = "Density") + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+This histogram and density plot provide a lot of information about the dataset still. It shows that the dataset is not normally distributed, the data is widely distributed, is skewed to the left, and the mean is not 0.
+
+###QQ-Plot
+
+The last visual analysis that will be done is the QQ-Plot.
+
+```{r,out.width = '100%', warning=FALSE,message=FALSE,error=FALSE}
+y     <- quantile(kcts, c(0.25, 0.75)) # Find the 1st and 3rd quartiles
+x     <- qnorm( c(0.25, 0.75))         # Find the matching normal values on the x-axis
+slope <- diff(y) / diff(x)             # Compute the line slope
+int   <- y[1] - slope * x[1]  
+
+ggplot() + 
+  aes(sample=kcts) + 
+  stat_qq(distribution=qnorm) +  
+  geom_abline(intercept=int, slope=slope, colour = 'navy') + 
+  ylab("Height") +
+  xlab("Theoretical")+
+  ggtitle("QQ-Plot of Average Kansas City Home Selling Price") + 
+  scale_x_continuous()+
+  scale_y_continuous() + 
+  theme_minimal() +
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+The QQ-Plot shows exactly what has seen above in the histogram and density plot, which the data is not normally distributed. That the data skews to left and is flat.
+
+##Statistical Tests of Time Series
+
+Now that visual analysis of the dataset has been done, a statistical test will be performed as well.
+
+###Test for Normality
+
+The first test that will be done is a test for normality, which from our visual test, we are led to believe that the data will not be normally distributed.
+
+```{r}
+normalTest(kcts,method=c("jb")) 
+```
+
+The Jarque-Bara Normality Test is testing if the data is not normalized, with the data being normally distributed as the null hypothesis and the data being not normally distributed as the alternative hypothesis. And with a p-value under .05, at .03867, meaning that we reject the null hypothesis and accept that the dataset is not normally distributed.
+
+###Test for Autocorrelation
+
+The next statistical test will be for autocorrelation in the first 24 lags of the data. The visual analysis showed that there was autocorrelation in the dataset.
+
+```{r}
+Box.test(kcts, lag=24, fitdf=0, type="Lj")
+```
+
+With the Box-Ljung Test, the null hypothesis is that the data does not have autocorrelation and the alternative hypothesis is that the data does have autocorrelation. With the p-value of the test being under .05 significantly, with a value under 2e-16, we reject the null hypothesis and conclude that the data is autocorrelated.
+
+##Plots of Differenced Time Series
+
+Now that is has been determined that the dataset itself is not normally distributed, one of the easiest ways to normalize the data is but taking the first difference of the dataset. Let do a visual analysis of the differenced average home selling price of Kansas City to see what can be found.
+
+###Time Series Plot
+
+Just like with the first analysis, this analysis will begin with a simple time series plot.
+
+```{r,out.width = '100%'}
+kcts %>%diff%>% autoplot()+
+  theme_minimal() + 
+  geom_line(aes(colour="price"))+
+  scale_colour_calc() +
+  labs(title = "Difference of Average Kansas City Home Selling Price",subtitle="From 10/10/2006 to 10/9/2017",x = "Date", y = "Price")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+The differenced plot of the average home selling prices in Kansas City looks completely different than the first plot but it shows the change in home price from month to month. From 2007 to 2009 there seems like the drops are greater than the gains and from 2013 on it seems like the gains are greater than the drop. It seems harder to make out exactly what is taking place with the seasonality in place, but it does appear that the dataset is now normalized because it appears that the mean is closer to 0.
+
+###Decomposition Plots
+
+Next analysis will decompose the differenced dataset.
+
+```{r,out.width = '100%'}
+autoplot(stl(diff(kcts), s.window="periodic", robust=TRUE))+theme_minimal()+
+  labs(title = "Decomposition of Difference of Average Kansas City Home Selling Price")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+The decomposition of the dataset shows that there is still a yearly seasonality effect that takes place. And the trend shows that from pretty much the start of the data until mid 2011 there is a negative trend, then from mid 2011 to the end of the data set the trend is positive, which reflects with what we saw with the regular average selling price data, a decline until mid 2011 then an increase. There is still a good amount of remainder left that the decomposition has not accounted for, that is to be expected.
+
+###ACF and PACF Plots
+
+Now the ACF and PACF of the differenced dataset.
+
+```{r,out.width = '100%', fig.height = 7, warning=FALSE,message=FALSE,error=FALSE}
+p1 <- ggAcf(diff(kcts)) + theme_minimal()+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+ ggtitle('ACF and PACF Plots of Differenced Avereage Kansas City Home Selling Price')
+
+p2<-ggPacf(diff(kcts)) + theme_minimal()+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+ ggtitle('')
+
+multiplot(p1,p2, cols =1)
+```
+
+The ACF of the differenced data by how quickly the slope goes to 0 leads me to believe that the data is now stationary and normally distributed, which is what we are hoping for. And the spikes at the 12 and 24 lags again point to the yearly seasonality. And now that we have determined that the data is normally distributed by the fact that their autocorrelation means that the data is not just white noise and the time series itself can be used in helping to predict forecasted time series.
+
+The PACF plot shows the difference dataset when the lag effect of the dataset has been removed there is still autocorrelation present, meaning that the data has partial autocorrelation. Which can be used in in an autoregressive model. The spikes at the 12 lag show there is yearly seasonality as well, which will have to account for before these plots can be used in helping to determine an ARIMA model.
+
+###Histogram
+
+Now to examine the new histogram and density plot.
+
+```{r,out.width = '100%'}
+ggplot(diff(kcts), aes(x=y)) +
+  geom_histogram(aes(y=..density..),binwidth=5000,  fill = "goldenrod")+
+  geom_density(aes(y=..density.., colour ="Navy")) +  
+  geom_vline(aes(xintercept=mean(y, na.rm=TRUE)),color="grey69", linetype="dashed", size=1)+
+  labs(title = "Histogram of Difference of Average Kansas City Home Selling Price", x = "Price", y = "Density") + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+This is histogram and density plot is exactly what we want to see with a normally distributed dataset. The shape of the distribution has the class bell shape, it seems like both sides are evenly distributed, and the mean of the data falls just about at 0 which is what is needed for a normal distribution.
+
+###QQ-Plot
+
+And a QQ-Plot will be used for the last visual analysis of the difference dataset.
+
+```{r,out.width = '100%', warning=FALSE,message=FALSE,error=FALSE}
+y     <- quantile(diff(kcts), c(0.25, 0.75)) # Find the 1st and 3rd quartiles
+x     <- qnorm( c(0.25, 0.75))         # Find the matching normal values on the x-axis
+slope <- diff(y) / diff(x)             # Compute the line slope
+int   <- y[1] - slope * x[1]  
+
+ggplot() + 
+  aes(sample=diff(kcts)) + 
+  stat_qq(distribution=qnorm) +  
+  geom_abline(intercept=int, slope=slope, colour = 'navy') + 
+  ylab("Height") +
+  xlab("Theoretical")+
+  ggtitle("QQ-Plot of Difference of Average Kansas City Home Selling Price") + 
+  scale_x_continuous()+
+  scale_y_continuous() + 
+  theme_minimal() +
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+With all the points of that QQ-Plot just about landing on or close to the abline, and with no pronouncing shape to the data points, this graph also points to the fact that the differenced dataset is now normally distributed.
+
+##Statistical Tests of Differenced Time Series
+
+In completing the visual analysis of the differenced dataset, statistical analysis will now be performed.
+
+###Test for Normality
+
+Again, the first test that will be done is a test for normality, which from our visual test we are led to believe that the differenced data is normally distributed.
+
+```{r}
+normalTest(diff(kcts),method=c("jb")) 
+```
+
+With the p-value of the test well above the p-value of .05 at .5431, we will accept the null hypothesis that the differenced data is normally distributed, unlike the original dataset.
+
+###Test of Autocorrelation
+
+The next will be the test for autocorrelation in the first 24 lags of the differenced data. The visual analysis showed that there was autocorrelation in the differenced dataset.
+
+```{r}
+Box.test(diff(kcts), lag=24, fitdf=0, type="Lj")
+```
+
+In using the Box-Ljung Test with the resulting p-value of the test being under .05 significantly, with a value under 2e-16, we reject the null hypothesis and conclude that the data is autocorrelated.
+
+##Plots of Seasonality
+
+Now in looking and test at the time series data and difference data, we can tell that there is there is seasonality to the data. And since the data is by month and the significant lags always seem to be separated by 12 lags it can be concluded that the data has yearly seasonality to it. To get a better look at this seasonality I decided to create some seasonality plots to better examine the information.
+
+###Seasonal Plots
+
+The first plot I created is a seasonal plot, which is a plot of the season variables, which in our case is every month of the year, and plots all the yearly data together on some year time frame.
+
+```{r,out.width = '100%'}
+ggseasonplot(kcts) + labs(title="Seasonal Plot of Average Kansas City Home Selling Price",subtitle="From 10/10/2006 to 10/9/2017", y = "Price")+theme_minimal()+
+theme(legend.position="right",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+
+```
+
+Not only does this result in a visually striking graph but a lot can be learned from it. In looking at the year over year information it seems like the month that has the lowest selling price in February and the month with the highest selling price in July. Which means the best time to sell your house is in the summer and the best time to buy is in winter, according to this graph. 
+
+Not surprising the year with the highest average home selling price is 2007. And the year with the lowest sales is 2010, which was discovered to be the case earlier in the decomposition of the time series data. But this helps to go to show how closely the home prices were between 2008 and 2011 until home price begin to rise in the second half of the year.
+
+###Boxplots
+
+And the other seasonal plot we will look at is the boxplot of the seasonal effect.
+
+```{r,out.width = '100%', warning=FALSE,message=FALSE,error=FALSE}
+ggplot() + 
+  geom_boxplot(aes(x = factor(cycle(kcts)), y = kcts, fill =factor(cycle(kcts)))) + 
+  scale_x_discrete(labels=c("1"="Jan","2"="Feb","3"="Mar","4"= "Apr","5"="May", "6"="Jun","7"="Jul","8"="Aug","9"="Sep","10"="Oct","11"="Nov","12"="Dec"))+
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "Seasonal Boxplot of Average Kansas City Home Selling Price",subtitle="From 10/10/2006 to 10/9/2017",x = "Month", y = "Price")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+The is confirms some of the things discovered in the last plot which it looks like February is the lowest average selling price month with June being the traditionally the highest. What is interesting is the amount of the amount of variation that the graph shows between average home selling. It seems like there is a similar variation between January and May but the variation shrinks in June and also is noticeably lower in August, September, and October, but then the variation begins to widen as the year comes to a close.
+
+##Holts Winters
+
+Now that both visual and statistical testing has been completed on the dataset, I will begin creating and selecting models for future forecasting starting with the Holts Winters model. I choose to start with Holts Winters instead of just the Holts because of the seasonality that my data has. For this model and the ETS model, I will use just the normal time series data.
+
+###Models
+
+I will start by creating 4 different Holts Winters Models: additive, additive damped, multiplicative, and multiplicative damped.
+
+```{r}
+fit1 <- hw(kcts, seasonal="additive", h=36) 
+fit2 <- hw(kcts, seasonal="additive", damped = TRUE, h=36)
+fit3 <- hw(kcts,seasonal="multiplicative",h=36) 
+fit4 <- hw(kcts,seasonal="multiplicative", damped=TRUE, h=36) 
+
+fit1$model
+fit2$model
+fit3$model
+fit4$model
+```
+
+It is interesting that will all these models that they have an Alpha under .5 and a Beta under .1. This helps to show that these models use many different lags back to help forecast the future points.
+
+###Forecast Plots
+
+Now that the models have been created let's see how the models look visually.
+
+```{r,out.width = '100%'}
+kcts%>%autoplot +
+  labs(title = "Holts Winters Forecasts of Average Kansas City Home Selling Price",subtitle="From 2006 to 2021",x = "Date", y = "Price")+
+  #geom_line(aes(colour="Additive"),fitted(fit1))+
+  geom_line(aes(colour="Additive"),fit1$mean)+
+  #geom_line(aes(colour="Multiplicative"),fitted(fit2))+
+  geom_line(aes(colour="Multiplicative"),fit2$mean)+
+  #geom_line(aes(colour="Additive damped trend"),fitted(fit3))+
+  geom_line(aes(colour="Additive damped trend"),fit3$mean)+
+  #geom_line(aes(colour="Multiplicative damped trend"),fitted(fit4))+
+  geom_line(aes(colour="Multiplicative damped trend"),fit4$mean)+
+  theme_minimal() + 
+  scale_colour_calc() +
+  theme(legend.position="bottom",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+
+kcts%>%autoplot +
+  labs(title = "Holts Winters Forecasts of Average Kansas City Home Selling Price",subtitle="From 2015 to 2021",x = "Date", y = "Price")+
+  #geom_line(aes(colour="Additive"),fitted(fit1))+
+  geom_line(aes(colour="Additive"),fit1$mean)+
+  #geom_line(aes(colour="Multiplicative"),fitted(fit2))+
+  geom_line(aes(colour="Multiplicative"),fit2$mean)+
+  #geom_line(aes(colour="Additive damped trend"),fitted(fit3))+
+  geom_line(aes(colour="Additive damped trend"),fit3$mean)+
+  #geom_line(aes(colour="Multiplicative damped trend"),fitted(fit4))+
+  geom_line(aes(colour="Multiplicative damped trend"),fit4$mean)+
+  coord_cartesian(xlim = c(2015, 2021), ylim = c(175000,275000))+
+  theme_minimal() + 
+  scale_colour_calc() +
+  theme(legend.position="bottom",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+It seems like with the four models, the additive damped, multiplicative, and multiplicative damped all created similar results with the additive seeming to increase at a greater rate than the other. The slope of the additive model seems to match the slope of the past few years of data where the other models seem to be more conservative in their forecasts. But all models seem to capture the seasonal effect very well.
+
+###Accuracy
+
+To determine which model will be the best to use, we'll look at the AIC, AICC, and other Accuracy of the models.
+
+```{r}
+fit1$model$aic
+fit2$model$aic
+fit3$model$aic
+fit4$model$aic
+
+fit1$model$aicc
+fit2$model$aicc
+fit3$model$aicc
+fit4$model$aicc
+
+kable(accuracy(fit1))
+kable(accuracy(fit2))
+kable(accuracy(fit3))
+kable(accuracy(fit4))
+```
+
+The AIC between the model is tied between the additive and additive damped, but the AICC is lower for the additive. But the additive damped model does have a lower RSME, but the additive has a lower MAE. It is difficult to choose which is the best model to use so I am going to use the ETS model to aid in the selecting, to see which it will recommend.
+
+##ETS
+
+The ETS model can choose from every Holts Winters model and more because it can use multiplicative error and not the just additive error like Holts Winters, but because the time series is not exponential the ETS model will just be selecting from the same options that the Holts Winters provided.
+
+###Models
+
+For the ETS models I have decided to just let the function pick the best model to use but for the first first model I want it to pick based on AIC and then the second model will just use the default parameters to pick.
+
+```{r}
+fit5 <- ets(kcts, ic=c("aic"))
+
+fit5
+
+fit6 <- ets(kcts)
+
+fit6
+```
+
+Based on AIC the ETS models selected was an additive error, additive damped trend, and additive seasonal effect, which is what the Holts Winters additive damped model is. And Based on the normal function the ETS model selected was an additive error, additive trend, and additive seasonal effect. It good to see that the two models selected were the same two models that were being looked at earlier but it would have been nice to have had a clear cut winner between the two, though it does seem like we are indeed looking in the right place.
+
+###Forecast Plots
+
+Now that we have two ETS models created let's see how their forecasts look.
+
+```{r,out.width = '100%'}
+fc5<-forecast(fit5, h=36)
+fc6<-forecast(fit6, h=36)
+
+kcts%>%autoplot + 
+   labs(title = "ETS Forecasts of Average Kansas City Home Selling Price",subtitle="From 2006 to 2021",x = "Date", y = "Price")+
+  #geom_line(aes(colour="ETS(AAdA)"),fitted(fit5))+
+  geom_line(aes(colour="ETS(AAdA)"),fc5$mean)+
+  #geom_line(aes(colour="ETS(AAA)"),fitted(fit6))+
+  geom_line(aes(colour="ETS(AAA)"),fc6$mean)+
+  theme_minimal() + 
+  scale_colour_calc(breaks= c("ETS(AAdA)","ETS(AAA)")) +
+  theme(legend.position="bottom",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+
+kcts%>%autoplot + 
+   labs(title = "ETS Forecast of Average Kansas City Home Selling Price",subtitle="From 2015 to 2021",x = "Date", y = "Price")+
+  #geom_line(aes(colour="ETS(AAdA)"),fitted(fit5))+
+  geom_line(aes(colour="ETS(AAdA)"),fc5$mean)+
+  #geom_line(aes(colour="ETS(AAA)"),fitted(fit6))+
+  geom_line(aes(colour="ETS(AAA)"),fc6$mean)+
+  theme_minimal() + 
+  scale_colour_calc(breaks= c("ETS(AAdA)","ETS(AAA)")) +
+  theme(legend.position="bottom",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+
+    coord_cartesian(xlim = c(2015, 2021), ylim = c(175000,275000))
+```
+
+In just like the Holts Winters model, the ETS(A,A,A) model really takes off in what appears to be a similar trajectory that the data has had for the past few years, where the ETS (A,Ad,A) model seems to be predicting a forecast that is about the same for all three years.
+
+###Accuracy
+
+To help pick between these two models I will be looking at the accuracy between them yet again
+
+```{r}
+fit5$aic
+fit6$aic
+
+kable(accuracy(fit5))
+kable(accuracy(fit6))
+```
+
+Since the first ETS model was selected by its AIC it makes sense that it has the better AIC between the two, but they are both very close to each other, and the first model does have a better RSME the second model, but the second model has the better MAE. 
+
+Even though they are very close I have decided to use the second ETS model for my forecast between the Holts Winters and ETS models. I feel like it could very easily be other model but looking beyond the time series data, home pricing has historical risen year over year so I have selected the best model that I feel like has done that.
+
+###Forecast with Confidence Intervals
+
+Here is what the forecast for the ETS(A,A,A) model looks like with confidence intervals.
+
+```{r,out.width = '100%', warning=FALSE,message=FALSE,error=FALSE}
+
+fc6%>%autoplot+
+   labs(title = "ETS(AAA) Forecast of Average Kansas City Home Selling Price",subtitle="From 2015 to 2021",x = "Date", y = "Price")+
+  theme_minimal() + 
+  scale_colour_calc() +
+  theme(legend.position="bottom",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+coord_cartesian(ylim = c(125000,325000))
+```
+
+Even though it was tough to pick between the two models, looking at the confidence intervals does make me feel better about my choice, because the possibility that home prices decline is within the 95% confidence intervals that are listed.
+
+##ARIMA
+
+For the next time series forecast model, I am going to look at is the different ARIMA models. Through the analysis of the dataset, it has been determined that once the data is differenced it becomes normalized, which the ARIMA model can account for in the model.
+
+###12th Difference Plots
+
+Even though we have already looked at two different plots of the dataset now I need to transform it once more, I need to take the 12 lag difference of the differenced dataset. This is to help account for the seasonality so that we can start to estimate the ARIMA models.
+
+```{r,out.width = '100%'}
+diff(diff(kcts),12)%>% autoplot()+
+  theme_minimal() + 
+  geom_line(aes(colour="price"))+
+  scale_colour_calc() +
+  labs(title = "Differced House Prices Differenced to 12th Period",subtitle="From 10/10/2006 to 10/9/2017",x = "Date", y = "Price")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+The new time plot looks like a similar format from the original differenced data, but it also looks completely different from taking the lag of the 12 periods. The data still looks normalized but the spikes seem more drastic in this plot.
+
+###12 Difference Plot ACF and PACF Plots
+
+To start estimating the ARIMA models will look at the ACF and PACF plots of the 12th differenced difference data to help us to understand autoregressive and moving of the model and the seasonality.
+
+```{r,out.width = '100%', fig.height = 7, warning=FALSE,message=FALSE,error=FALSE}
+p1 <- ggAcf(diff(diff(kcts),12)) + theme_minimal()+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+ ggtitle('ACF and PACF Plots of Differenced Avereage Kansas City Home Selling Price')
+  
+p2<-ggPacf(diff(diff(kcts),12)) + theme_minimal()+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+ ggtitle('')
+
+multiplot(p1,p2, cols =1)
+```
+
+Starting with the seasonality there appears to big spikes at the 12th lag still, so the 12th difference was not enough by itself to take care of the seasonality. Since we see those big spikes on both the ACF and PACF pot I think that both an autoregressive of 1 or (1,0,0)12 and a moving average of 1 or (0,0,1)12 should be tried to account for the seasonal effect.
+
+Now the normal model, with the difference of the data we know that model will have a difference of 1. The PACF plot seems to have significant lags at the second position that means an autoregressive effect for 2 lags or (2,1,0), and the ACF plot has a significant lag at first position means there may be a moving average effect at 1 lag or (0,1,1). Or it is possible that both are needed for an ARIMA of (2,1,1)
+
+Now combing those two different parts of the model there are 6 models to test for:
+
+(2,1,0)(1,0,0)12
+(2,1,0)(0,0,1)12
+(0,1,1)(1,0,0)12
+(0,1,1)(0,0,1)12
+(2,1,1)(1,0,0)12
+(2,1,1)(0,0,1)12
+
+###Models
+
+Now that we have identified the models we want to take a look at, let's create the models.
+
+```{r}
+fit7<-arima(kcts, c(2,1,0), c(1,0,0))
+fit8<-arima(kcts, c(2,1,0), c(0,0,1))
+fit9<-arima(kcts, c(0,1,1), c(1,0,0))
+fit10<-arima(kcts, c(0,1,1), c(0,0,1))
+fit11<-arima(kcts, c(2,1,1), c(1,0,0))
+fit12<-arima(kcts, c(2,1,1), c(0,0,1))
+
+fit7
+fit8
+fit9
+fit10
+fit11
+fit12
+```
+
+In just looking at the AIC of the models it seems like the models may be pretty close to each other.
+
+###Forecast Plots
+
+Now that the models are created let's see how all models look plotted together.
+
+```{r,out.width = '100%'}
+
+fc7<-forecast(fit7,h=36)
+fc8<-forecast(fit8,h=36)
+fc9<-forecast(fit9,h=36)
+fc10<-forecast(fit10,h=36)
+fc11<-forecast(fit11,h=36)
+fc12<-forecast(fit12,h=36)
+
+kcts%>%autoplot +
+  labs(title = "ARIMA Forecasts of Average Kansas City Home Selling Price",subtitle="From 2006 to 2021",x = "Date", y = "Price")+
+  #geom_line(aes(colour="ARIMA(2,1,0)(1,0,0)12"),fitted(fit7))+
+  geom_line(aes(colour="ARIMA(2,1,0)(1,0,0)12"),fc7$mean)+
+  #geom_line(aes(colour="ARIMA(2,1,0)(0,0,1)12"),fitted(fit8))+
+  geom_line(aes(colour="ARIMA(2,1,0)(0,0,1)12"),fc8$mean)+
+  #geom_line(aes(colour="ARIMA(0,1,1)(1,0,0)12"),fitted(fit9))+
+  geom_line(aes(colour="ARIMA(0,1,1)(1,0,0)12"),fc9$mean)+
+  #geom_line(aes(colour="ARIMA(0,1,1)(0,0,1)12"),fitted(fit10))+
+  geom_line(aes(colour="ARIMA(0,1,1)(0,0,1)12"),fc10$mean)+
+  #geom_line(aes(colour="ARIMA(2,1,1)(1,0,0)12"),fitted(fit11))+
+  geom_line(aes(colour="ARIMA(2,1,1)(1,0,0)12"),fc11$mean)+
+  #geom_line(aes(colour="ARIMA(2,1,1)(0,0,1)12"),fitted(fit12))+
+  geom_line(aes(colour="ARIMA(2,1,1)(0,0,1)12"),fc12$mean)+
+  theme_minimal() + 
+  scale_colour_calc(breaks=c("ARIMA(2,1,0)(1,0,0)12","ARIMA(2,1,0)(0,0,1)12","ARIMA(0,1,1)(1,0,0)12","ARIMA(0,1,1)(0,0,1)12","ARIMA(2,1,1)(1,0,0)12","ARIMA(2,1,1)(0,0,1)12")) +
+  theme(legend.position="bottom",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+
+kcts%>%autoplot +
+  labs(title = "ARIMA Forecasts of Average Kansas City Home Selling Price",subtitle="From 2006 to 2021",x = "Date", y = "Price")+
+  #geom_line(aes(colour="ARIMA(2,1,0)(1,0,0)12"),fitted(fit7))+
+  geom_line(aes(colour="ARIMA(2,1,0)(1,0,0)12"),fc7$mean)+
+  #geom_line(aes(colour="ARIMA(2,1,0)(0,0,1)12"),fitted(fit8))+
+  geom_line(aes(colour="ARIMA(2,1,0)(0,0,1)12"),fc8$mean)+
+  #geom_line(aes(colour="ARIMA(0,1,1)(1,0,0)12"),fitted(fit9))+
+  geom_line(aes(colour="ARIMA(0,1,1)(1,0,0)12"),fc9$mean)+
+  #geom_line(aes(colour="ARIMA(0,1,1)(0,0,1)12"),fitted(fit10))+
+  geom_line(aes(colour="ARIMA(0,1,1)(0,0,1)12"),fc10$mean)+
+  #geom_line(aes(colour="ARIMA(2,1,1)(1,0,0)12"),fitted(fit11))+
+  geom_line(aes(colour="ARIMA(2,1,1)(1,0,0)12"),fc11$mean)+
+  #geom_line(aes(colour="ARIMA(2,1,1)(0,0,1)12"),fitted(fit12))+
+  geom_line(aes(colour="ARIMA(2,1,1)(0,0,1)12"),fc12$mean)+
+  theme_minimal() + 
+  scale_colour_calc(breaks=c("ARIMA(2,1,0)(1,0,0)12","ARIMA(2,1,0)(0,0,1)12","ARIMA(0,1,1)(1,0,0)12","ARIMA(0,1,1)(0,0,1)12","ARIMA(2,1,1)(1,0,0)12","ARIMA(2,1,1)(0,0,1)12")) +
+  theme(legend.position="bottom",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+
+    coord_cartesian(xlim = c(2015, 2021), ylim = c(175000,262500))
+```
+
+It's interesting that all models looked closed by there AIC but in graphing them together there are some striking differences. The three models with the autoregressive seasonality effect look a lot like the other models we have seen but the models with moving average seasonal effect the estimation really dies off quickly. It will be interesting to see how all the models perform, but in terms of looking at models to forecast 3 years out, we might have to use the autoregressive seasonality by default.
+
+###ARIMA Residual ACF Plots
+
+Now that we have seen the forecast plot I want to see the ACF plots of the residuals of the model to see if all the autocorrelation in the residuals has been accounted for in the model.
+
+```{r,out.width = '100%', fig.height = 10, warning=FALSE,message=FALSE,error=FALSE}
+p1<-fit7 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMA(2,1,0)(1,0,0)12 Model", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p2<-fit8 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMA(2,1,0)(0,0,1)12 Model", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p3<-fit9 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMA(0,1,1)(1,0,0)12 Model", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p4<-fit10 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMA(0,1,1)(0,0,1)12 Model", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p5<-fit11 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMA(2,1,1)(1,0,0)12", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p6<-fit12 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMA(2,1,1)(0,0,1)12", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+
+multiplot(p1,p2,p3,p4,p5,p6,cols=1)
+```
+
+In first looking at the ACF plot for the residuals for every model it appears that no model accounts for all the autocorrelation. Which is unfortunate for the time series alone but this may be able to be accounted for when we bring in the other variables.
+
+###ARIMA Residual Box-Ljung Tests
+
+To make sure that all the autocorrelation has not been accounted for I thought we should run the Box-Ljung test for all the residuals for the ARIMA models we have created.
+
+```{r}
+Box.test(residuals(fit7), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit8), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit9), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit10), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit11), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit12), lag=24, fitdf=0, type="Lj")
+```
+
+In all the Box-Ljong test we rejected the null hypothesis meaning there is still autocorrelation left in the residuals.
+
+###Accuracy
+
+Since there is still autocorrelation left in the residuals we can't determine the best model by which one accounts for all the autocorrelation of the data we will have to look at the accuracy of the models.
+
+```{r}
+summary(fit7)
+summary(fit8)
+summary(fit9)
+summary(fit10)
+summary(fit11)
+summary(fit12)
+
+```
+
+In looking at the models with the lowest AIC the (2,1,0)(1,0,0) and (0,1,1)(1,0,0) models have the lowest AIC between all the models. And between those two models, the first one has the lowest RMSE. The other model with the autoregressive seasonality had good AIC and RMSE but I think if I had to choose a model I would go with the first model of (2,1,0)(1,0,0).
+
+###Auto ARIMA
+
+But just to make sure that we picked the right model I am going to use the Auto ARIMA function to see which model it selects.
+
+```{r}
+fit13<-auto.arima(kcts)
+
+fit13
+```
+
+The Auto ARIMA function ended up picking the same model that I selected which is reassuring.
+
+###Forecast with Confidence Intervals
+
+Now that I have selected an ARIMA model I want to plot it with the confidence intervals.
+
+```{r, out.width = '100%'}
+fc7%>%autoplot+
+  labs(title = "ARIMA(2,1,0)(1,0,0)12 Forecast of Average Kansas City Home Selling Price",subtitle="From 2015 to 2021",x = "Date", y = "Price")+
+  theme_minimal() + 
+  scale_colour_calc() +
+  theme(legend.position="bottom",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+coord_cartesian(ylim = c(125000,325000))
+```
+
+Feel like the ARIMA model end up turning out very well, it doesn't exactly follow the slope of the data, but it still increases as time goes one. The seasonal effect seems to works well and I like that model was created with normalized data. But this model, the Holts Winters, and the ETS model I think that this ARIMA model is the best to use to forecast the average selling price of homes in Kansas City. 
+
+#Multi-Variable Time Series
+
+Now that we have explored forecasting the average home selling in Kansas City based on the time series alone I want to try to forecast it using other variables as well. In my mind, the forecast of the time series by itself and with other variable is completely different so I decided to separate the analysis. I feel like the analysis of the single time series gave a good simple forecast but now I want to see if we can use other variables to help examine where home selling prices are going to go.
+
+##Time Series Variables
+
+With the original dataset, I collected the number of home listings in Kansas City, the number of new housing permits in Kansas City, and the US Home Price Index (HPI). I will use these other variables to see if they will be helpful in predicting on where home pricing is going.
+
+###Vairable Plots
+
+The first thing I want to do is plot all the time series together to perform a basic visual analysis.
+
+```{r,out.width = '100%', fig.height = 7, warning=FALSE,message=FALSE,error=FALSE}
+kcvarts <- ts(kchouse[,2:5], start=c(2007,8),frequency=12)
+
+p1<-kcvarts[,1] %>%autoplot+
+  theme_minimal() + 
+  geom_line(aes(colour="price"))+
+  scale_colour_calc() +
+   theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5),axis.text.x = element_blank(),axis.title.x=element_blank())+
+  labs(title = "Variable of KC House Data",subtitle="From 10/10/2016 to 10/9/2017",x = "Date", y = "Avg Price")
+p2<-kcvarts[,2] %>%autoplot+
+  theme_minimal() + 
+  geom_line(aes(colour="price"))+
+  scale_colour_calc() +
+   theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5),axis.text.x = element_blank(),axis.title.x=element_blank())+labs(y = "Listing")
+p3<-kcvarts[,3] %>%autoplot+
+  theme_minimal() + 
+  geom_line(aes(colour="price"))+
+  scale_colour_calc() +
+   theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5),axis.text.x = element_blank(),axis.title.x=element_blank())+labs(y = "Permit")
+p4<-kcvarts[,4] %>%autoplot+
+  theme_minimal() + 
+  geom_line(aes(colour="price"))+
+  scale_colour_calc() +
+   theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+labs(y = "US HPI")
+
+
+multiplot(p1,p2,p3,p4,cols=1)
+
+```
+
+The results are very interesting, it seems like the number of permits of and the US HPI follows very closely to the original plot of the average home selling price, but the number of listing performs very differently. It seems like for the first part of the plot the number of listing follows the plot of the selling price but when home price picks up the number of houses being sold continued to drop.
+
+###Cross Correlation
+
+Now that we have looked at the variable let's see how they relate to the time series were are trying to forecast for. To do this I am going to use the cross-correlation function to help be find out at which lags are the different time series are the most correlated.
+
+```{r}
+ccf(kchouse[,2], kchouse[,3])
+ccf(kchouse[,2], kchouse[,4])
+ccf(kchouse[,2], kchouse[,5])
+```
+
+For the in terms of the average selling price of a home, the number of listing is most correlated with it five lags into the future. But other than that one variable the other variables are most correlated with each other at the lag of 0, of at the same interval of time.
+
+##TSLM
+
+Now that we have the other variables, and know when they are strongly correlated with each other let's begin the forecasting with a time series linear model.
+
+###Models
+
+To make sure that we are on the right path using the other variable I want to run just a quick two quick TSLM models. One with just trend and seasonal effect and the other with a trend, seasonal effect, and the other variables added in.
+
+```{r}
+fit14 = tslm(kcvarts[,1]~trend+season)
+fit15 = tslm(kcvarts[,1]~trend+season+kcvarts[,2:4])
+
+summary(fit14)
+summary(fit15)
+```
+
+In just this quick model we see the Adjusted R-squared go from .716 to .972 once we add in the other variables, so it definitely seems like adding in the other variables will be very beneficial. 
+
+###Variables Lag 5 Listing
+
+Now that we know that adding in other variables adds values I want to see the effect of the lagging average selling price, number of permits, and the US HPI 5 period behind the number of listing. To do this I create another list of variables when everything is lagged behind listing 5, then I created another one just with last five periods removed to compare with the lagged 5 dataset.
+
+```{r}
+kcvarts2<-as.data.frame(cbind(c(kcvarts[6:120,2]),
+                 c(kcvarts[1:115,3]),
+                 c(kcvarts[1:115,4])))
+kcvarts2<-ts(kcvarts2, start=c(2007,8),frequency=12)
+
+
+kcvarts3<-kcvarts[1:115,2:4]
+kcvarts3<-ts(kcvarts3, start=c(2007,8),frequency=12)
+```
+
+Now that we have the new variable we can test for significance.
+
+###Models Lag 5 Listing
+
+Using these new variables I want to create two new models to compare the effects of transforming the variables.
+
+```{r}
+kcts2<-ts(kcts[1:115], start=c(2007,8),frequency=12)
+
+fit16 = tslm(kcts2~trend+season+kcvarts2)
+fit17 = tslm(kcts2~trend+season+kcvarts3)
+
+summary(fit16)
+summary(fit17)
+```
+
+The Adjusted R-squared of the models are very close to each other and it may not be worth going through the trouble of taking the data 5 lags behind listing. 
+
+###Significant Variables Lag 5 Listing
+
+To see if it is actually worth taking the data 5 lags behind listing, I decided to remove the variables that were not significant between the two models. In the first model the number of new permits was not significant and in the second model, the number of the listing was not significant. So I will create two more sets of variables to test against.
+
+```{r}
+kcvarts4<-as.data.frame(cbind(c(kcvarts[6:120,2]),
+                 c(kcvarts[1:115,4])))
+kcvarts4<-ts(kcvarts4, start=c(2007,8),frequency=12)
+
+
+kcvarts5<-kcvarts[1:115,3:4]
+kcvarts5<-ts(kcvarts5, start=c(2007,8),frequency=12)
+```
+
+###Models Significant Variables Lag 5 Listing
+
+Now that the new variables are ready we can test the two models again.
+
+```{r}
+fit18 = tslm(kcts2~trend+season+kcvarts4)
+fit19 = tslm(kcts2~trend+season+kcvarts5)
+
+summary(fit18)
+summary(fit19)
+```
+
+Again we get two models that are very close in terms of adjusted R-squared with the first model have .967 and the second model have one of .966. It worth noting too that both models have a p-value of well under .05, meaning that the models are significant.
+
+###Final Model
+
+Between the two models, I have decided to just use the variable of the number of permits and the US HPI. Even though the other model is performed slightly better, I don't think a .001 increase in Adjusted R-squared is worth waiting 5 months to predict the average home selling price after the fact. Now that we are just using permits and US HPI I want to run the model one more time using the entire time series again and not have to remove the last five periods.
+
+```{r}
+fit20 = tslm(kcvarts[,1]~trend+season+kcvarts[,c(3,4)])
+
+summary(fit20)
+```
+
+I am really happy with the way the TSLM turned out. In the LM model format, we can use the coefficients of the seasonal effect to indeed see that February is indeed the month with the lowest home selling price where June is the highest. You can also see as the US HPI increase so does the prices of houses but interesting enough the home prices increases with new permits as well, which is the opposite of what I would expect.
+
+###Forecast Models Durbin-Watson Test
+
+Now that we have a new model I want to see if the residuals of the new model have any autocorrelation in the residuals.
+
+```{r}
+dwtest(fit20, alt="two.sided")
+```
+
+In the Durbin-Watson test, the p-value is greater can .05 so can accept the null hypothesis that there is no autocorrelation significant autocorrelation in the residuals.
+
+###Forecast Variables
+
+Now that we have a model I wanted to get an idea of what a forecast may look like so I used the Auto ARIMA model to forecast some future values of the new permits and US HPI. Now with this being said, I'm not going to compare this with other forecasts that I have created because the error with this forecast model would be much great but I thought it was an exercise worth trying.
+
+```{r}
+kcpermit<-forecast(auto.arima(kcvarts[,3]),h=36)
+kcus_hpi<-forecast(auto.arima(kcvarts[,4]),h=36)
+
+kcvarts6<-as.data.frame(cbind(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0),c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0),c(kcpermit$mean),c(kcus_hpi$mean)))
+
+kcvarts<-ts(kcvarts6, start=c(2017,8),frequency=12)
+```
+
+###Forecast with Confidence Intervals
+
+Now that I have forecasted variables I can create a forecast based on those other variables.
+
+```{r,out.width = '100%', fig.height = 7, warning=FALSE,message=FALSE,error=FALSE}
+fc20 <- forecast(fit20, newdata=kcvarts)
+
+fc20%>%autoplot+
+  labs(title = "TSLM Forecast Using Permits & US HPI",subtitle="From 2015 to 2021",x = "Date", y = "Price")+
+  theme_minimal() + 
+  scale_colour_calc() +
+  theme(legend.position="bottom",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+coord_cartesian(ylim = c(125000,325000))
+```
+
+Overall the new forecast looks very good. If I was using real predictions of new housing permits and US HPI I think I could create a fairly close forecast of where the Kansas City average home selling price will be at.
+
+##ARIMAX
+
+Now that I have created a TSLM model I wanted to create a new ARIMAX model. But since in the last model lagging everything behind listing did not seem to very productive I decided to skip that process in the ARIMAX model. 
+
+###Models
+
+Unfortunately for the ARIMAX, it will not tell us which variables are significant like the TSLM, so I will have to run all 7 combinations of the 3 variables through the Auto ARIMA function to see which model is the most accurate. 
+
+```{r}
+kcvarts <- ts(kchouse[,2:5], start=c(2007,8),frequency=12)
+
+fit22<-auto.arima(kcts,xreg = kcvarts[,2])
+fit23<-auto.arima(kcts,xreg = kcvarts[,3])
+fit24<-auto.arima(kcts,xreg = kcvarts[,4])
+fit25<-auto.arima(kcts,xreg = kcvarts[,2:3])
+fit26<-auto.arima(kcts,xreg = kcvarts[,c(2,4)])
+fit27<-auto.arima(kcts,xreg = kcvarts[,3:4])
+fit28<-auto.arima(kcts,xreg = kcvarts[,2:4])
+
+fit22
+fit23
+fit24
+fit25
+fit26
+fit27
+fit28
+```
+
+It seemed like all 7 models are different from each other but have a very similar accuracy in glancing at the AICs of the models.
+
+###Residual ACF Plots with No Lag Listing
+
+To see which model did the best for accounting for all the autocorrelation in the dataset, I created ACF plots for the residuals for all the models to see to check for remaining autocorrelation.
+
+```{r,out.width = '100%', fig.height = 10, warning=FALSE,message=FALSE,error=FALSE}
+p1<-fit22 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMAX with Listing", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p2<-fit23 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMAX with Permit", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p3<-fit24 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMAX with US HPI", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p4<-fit25 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMAX with Listing & Permit", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p5<-fit26 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMAX with Listing & US HPI", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p6<-fit27 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMAX with Permit & US HPI", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+p7<-fit28 %>% residuals %>% ggAcf + 
+  theme_minimal() + 
+  scale_colour_calc() +
+  labs(title = "ARIMAX with Listing, Permit, & US HPI", x = "Time", y = "Residuals")+
+  theme(legend.position="none",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+
+multiplot(p1,p2,p3,p4,p5,p6,p7,cols=1)
+```
+
+In looking at the ACF plots it seems like the 2nd and 4th models are the only ones without any autocorrelation in the residuals, but other models are very close to not having any correlation. But it worth noting that this is better than the first ARIMA models I ran where none of the models created residuals with no autocorrelation.
+
+###Residual Box-Ljung Tests with No Lag Listing
+
+Now that we have done the visual test for autocorrelation I want to run a statistical test for autocorrelation in the residuals.
+
+```{r}
+Box.test(residuals(fit22), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit23), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit24), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit25), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit26), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit27), lag=24, fitdf=0, type="Lj")
+Box.test(residuals(fit28), lag=24, fitdf=0, type="Lj")
+```
+
+Though doing the Box-Ljung test it seems like 6 of the 7 models statistically don't have autocorrelation in the residuals.
+
+###Accuracy with No Lag Listing
+
+Now that we know that most models account for the autocorrelation in the data, let's compare the models for accuracy.
+
+```{r}
+summary(fit22)
+summary(fit23)
+summary(fit24)
+summary(fit25)
+summary(fit26)
+summary(fit27)
+summary(fit28)
+```
+
+In looking across all the models it seems like models 3, 5, and 6 have the lowest AIC of the 7 models that were created. And of those models three models, model 5 has the lowest RMSE which is the model that I will use for the creating the final forecast. The ARIMAX model uses listings and the US HPI to forecast future home selling prices in Kansas City.
+
+###Forecast Variables
+
+Now that we know which variables we need to create a forecast I am going to use the Auto ARIMA method again to produce some future variables to create a forecast, again I know this forecast is not significant with the amount error that is truly involved making it but it is worth trying.
+
+```{r}
+kclisting<-forecast(auto.arima(kcvarts[,2]),h=36)
+kcus_hpi<-forecast(auto.arima(kcvarts[,4]),h=36)
+
+kcvarts7<-as.data.frame(cbind(c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0),c(kclisting$mean),c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0),c(kcus_hpi$mean)))
+
+kcvarts<-ts(kcvarts6, start=c(2017,8),frequency=12)
+```
+
+For this time around we just created forecast for the number of listing and the US HPI again.
+
+##Forecast with Confidence Intervals
+
+Now that we have forecasted variables we can create the last forecast using the ARIMAX model.
+
+```{r,out.width = '100%', warning=FALSE,message=FALSE,error=FALSE}
+fc26 <- forecast(fit26, xreg=kcvarts7[,c(2,4)] , h=36)
+
+fc26%>%autoplot+
+  labs(title = "ARIMAX with Listing, Permit, & US HPI",subtitle="From 2007 to 2021",x = "Date", y = "Price")+
+  theme_minimal() + 
+  scale_colour_calc() +
+  theme(legend.position="bottom",legend.title=element_blank(),plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))+coord_cartesian(ylim = c(125000,325000))
+```
+
+The last forecasted model seems to be another reasonable forecast of where average prices are likely to go. But between the ARIMAX model and the TSLM, I prefer using the TSLM model. I like the LM format a lot and using is very easy to understand the effect the seasonality trend and other variables have on the models, and with the forecasted variable the TSLM model produced a lot less a confidence interval, which is good in this case, saying that we have the know variables for new permits and US HPI then we could make a forecast with not a lot of variance in the error.
+
