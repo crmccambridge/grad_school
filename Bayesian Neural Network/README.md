@@ -1,6 +1,4 @@
- Exploring Bayensian Neural Networks
-By: Connor McCambridge
-
+# Exploring Bayensian Neural Networks
 
 ## Objective
 
